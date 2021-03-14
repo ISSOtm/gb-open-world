@@ -51,15 +51,10 @@ Reset::
 	dec b
 	jr nz, .copyOAMDMA
 
-	FAIL "Edit to set palettes here"
-	; CGB palettes maybe, DMG ones always
-
-	; You will also need to reset your handlers' variables below
-	; I recommend reading through, understanding, and customizing this file
-	; in its entirety anyways. This whole file is the "global" game init,
-	; so it's strongly tied to your own game.
-	; I don't recommend clearing large amounts of RAM, nor to init things
-	; here that can be initialized later.
+	ld a, $E4
+	ldh [rBGP], a
+	ldh [rOBP0], a
+	ldh [rOBP1], a
 
 	; Reset variables necessary for the VBlank handler to function correctly
 	; But only those for now
@@ -143,9 +138,8 @@ wShadowOAM::
 	ds NB_SPRITES * 4
 
 
-FAIL "If not using banked WRAM, then replace $D000 with $E000 and delete this line"
 ; This ensures that the stack is at the very end of WRAM
-SECTION "Stack", WRAM0[$D000 - STACK_SIZE]
+SECTION "Stack", WRAM0[$E000 - STACK_SIZE]
 
 	ds STACK_SIZE
 wStackBottom:
