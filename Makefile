@@ -130,6 +130,14 @@ $(RESDIR)/%.pb8.size: $(RESDIR)/%
 	@$(MKDIR_P) $(@D)
 	$(call filesize,$<,8) > $(RESDIR)/$*.pb8.size
 
+$(RESDIR)/%.vwf: $(SRCDIR)/gb-vwf/make_font.py $(RESDIR)/%.png
+	@$(MKDIR_P) $(@D)
+	$(PY) $^ $@
+
+$(RESDIR)/charmap.asm $(DEPDIR)/charmap.mk: $(SRCDIR)/vwf.asm
+	@$(MKDIR_P) $(RESDIR) $(DEPDIR)
+	$(RGBASM) $(ASFLAGS) -M $(DEPDIR)/charmap.mk -MG -MP -MQ $(RESDIR)/charmap.asm -MQ $(DEPDIR)/charmap.mk $< > $(RESDIR)/charmap.asm
+
 ###############################################
 #                                             #
 #                 COMPILATION                 #
@@ -152,7 +160,7 @@ $(OBJDIR)/%.o $(DEPDIR)/%.mk: $(SRCDIR)/%.asm
 	$(RGBASM) $(ASFLAGS) -M $(DEPDIR)/$*.mk -MG -MP -MQ $(OBJDIR)/$*.o -MQ $(DEPDIR)/$*.mk -o $(OBJDIR)/$*.o $<
 
 ifneq ($(MAKECMDGOALS),clean)
--include $(patsubst $(SRCDIR)/%.asm,$(DEPDIR)/%.mk,$(SRCS))
+-include $(patsubst $(SRCDIR)/%.asm,$(DEPDIR)/%.mk,$(SRCS)) $(DEPDIR)/charmap.mk
 endif
 
 # Catch non-existent files

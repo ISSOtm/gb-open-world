@@ -6,6 +6,8 @@ INCLUDE "hardware.inc/hardware.inc"
 
 INCLUDE "rgbds-structs/structs.asm"
 
+INCLUDE "res/charmap.asm"
+
 
 ; A couple more hardware defines
 
