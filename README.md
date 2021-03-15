@@ -1,60 +1,87 @@
-# gb-starter-kit
+# gb-open-world
 
-A customizable and ready-to-compile bundle for Game Boy RGBDS projects. Contains your bread and butter, guaranteed 100% kitchen sink-free.
+Yes, again.
 
-## Downloading
+## Goal
 
-Downloading this repository requires some extra care, due to it using submodules. (If you know how to handle them, nothing more is needed.)
+This is my second attempt at an "open-world" Game Boy (Color-only) game engine.
 
-### Use as a template
+What I mean by "open-world" is, the engine will be able to load graphics on the fly, without any "transitions" (no screen fades, no explicit design of a "transition area", no fixed screens, etc.).
 
-You can [make a new repository using this one as a template](https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template) or click the green "Use this template" button near the top-right of this page.
+This should enable creating games with much better graphical variety, bringing the experience much closer to more modern .
 
-### Cloning
+- It should be possible to create maps simply by **automatically converting PNG images**, without further editing.
+  This is to make the engine easy to use.
+- __Yes, the engine is GBC-only.__
+  The GBC's extra VRAM bank and G/HDMA will be used a lot to make this possible.
+  This should be possible on DMG on a lesser scale, but I'm thus not interested in that.
+- **"12.4" fixed-point position support.**
+  Fixed-point positions make smooth movement at any speed very easy.
+  12.4 is convenient to work with on a technical level, and allows for 2048 by 2048 px maps, which should be plenty enough!
+- **Pixel-based ("free") movement.**
+  Because I find "grid-locked" movement clumsy, and it's harder to program, too.
+  Plus, diagonals don't make much sense with it—MOTHER on the NES being a rare exception!
 
-If cloning this repo from scratch, make sure to pass the `--recursive` flag to `git clone`; if you have already cloned it, you can use `git submodule update --init` within the cloned repo.
+Additionally, I'm planning an extra twist music-wise :)
 
-If the project fails to build, and either `src/include/hardware.inc/` or `src/include/rgbds-structs/` are empty, try running `git submodule update --init`.
+## History
 
-### Download ZIP
+I was originally planning to make such an engine back around 2018 (I think), with similar functionality.
+However, I got involved in too many other projects at once, and when I came back, my own codebase was a mess I couldn't understand.
 
-You can download a ZIP of this project by clicking the "Code" button next to the aforementioned green "Use this template" one. The resulting ZIP will however not contain the submodules, the files of which you will have to download manually.
+Since then, I evolved, tools improved, and I'm itching to get this done again.
+Plus, there's just been a [new RGBDS pre-release](https://github.com/gbdev/rgbds/releases/tag/v0.5.0-rc1), so I'm gonna use this as an opportunity to test it!
 
-## Setting up
+## Technicalities
 
-Make sure you have [RGBDS](https://github.com/rednex/rgbds), at least version 0.4.0, and GNU Make installed. Python 3 is required for most scripts in the `src/tools/` folder.
+Better document some of the details that go behind all the streaming!
 
-## Customizing
+### VRAM layout
 
-Edit `project.mk` to customize most things specific to the project (like the game name, file name and extension, etc.). Everything has accompanying doc comments.
+VRAM is divided in [two banks](https://gbdev.io/pandocs/#vram-banks-cgb-only), each containing 3 "blocks" (conceptually only) of 128 tiles each.
+"Blocks" are only conceptual, but they're helpful to visualize the [access limitations](https://gbdev.io/pandocs/#vram-tile-data).
 
-Everything in the `src` folder is the source, and can be freely modified however you want. The basic structure in place should hint you at how things are organized. If you want to create a new "module", you simply need to drop a `.asm` file in the `src` directory, name does not matter. All `.asm` files in that root directory will be individually compiled by RGBASM.
+An important factor in deciding how to lay out VRAM is [HDMA](https://gbdev.io/pandocs/#lcd-vram-dma-transfers-cgb-only).
+HDMA allows transferring data to VRAM more quickly (good!), but is dependent on the destination VRAM bank (and the source ROM bank, if copying from ROMX).
+Thus, I decided that all VRAM that would be written to via HDMA would have to live in bank 0.
+Bank 0 is accessed more often than bank 1 (I believe so, anyway), so this shouldn't be a problem.
+It's just important to remember to ensure that HDMA is not running before switching VRAM banks!
 
-There is "basic" code in place, but some things need your manual intervention. Things requiring manual intervention will print an error message describing what needs to be changed, and a line number.
+Since the BG will be streamed in large chunks, it will use GDMA during VBlank.
+VBlank lasts 1140 cycles ([4560 dots](https://gbdev.io/pandocs/#ff41-stat-lcd-status-r-w)), and copying 1 tile takes 8 cycles, so it's possible to copy 142.5 tiles per VBlank.
+Reducing this to 128 tiles (the size of a single HDMA), this leaves ((142.5 - 128) * 8) = 116 cycles of potential overhead; assuming the transfer is performed within the VBlank handler, this would include interrupt dispatch, and setting up the transfer—that seems reasonable.
+(@nitro2k01 suggested using a LY=LYC STAT interrupt to move some of the overhead to before VBlank; I might consider this if the need arises.)
 
-The file at `src/res/build_date.asm` is compiled individually to include a build date in your ROM. Always comes in handy, and displayed in the bundled error handler.
+After some thinking, I decided to have 64 "common" tiles shared by all tilesets, and reserve 64 BG tiles for UI (e.g. the textbox).
 
-If you want to add resources, I recommend using the `src/res` folder. Add rules in the Makefile; there are several examples.
+Another important feature I want, is the ability to dynamically load NPC cels.
+I plan to use HDMA for this, since GDMA is already taken by BG loading.
+Thus, they need to go into bank 0, as explained above.
+Since they'll be loaded individually, there may be memory fragmentation; reserving more space should help combat this.
+(TODO: another possibility is moving blocks towards the beginning of VRAM during idle time.)
 
-It is recommended that the start of your code be in `src/intro.asm`.
+Since the player is especially unpredictable, they could load new cels on each frame, and overload the loader; for this reason, the player's cels will instead be kept loaded at all times.
+To still provide variety, 128 tiles are reserved in bank 1 for those.
+There may still be some dynamic loading, but it should be more controlled.
 
-## Compiling
+This yields:
 
-Simply open you favorite command prompt / terminal, place yourself in this directory (the one the Makefile is located in), and run the command `make`. This should create a bunch of things, including the output in the `bin` folder.
+Block | Bank 0                     | Bank 1
+------+----------------------------+-----------------------------------------
+$8000 | NPC tiles                  | Player
+$8800 | NPC tiles                  | UI (64 tiles), then common BG (64 tiles)
+$9000 | 2 tilesets (64 tiles each) | 2 tilesets (64 tiles each)
 
-While this project is able to compile under "bare" Windows (i.e. without using MSYS2, Cygwin, etc.), it requires PowerShell, and is sometimes unreliable. You should try running `make` two or three times if it errors out.
+### Palette streamer
 
-If you get errors that you don't understand, try running `make clean`. If that gives the same error, try deleting the `deps` folder. If that still doesn't work, try deleting the `bin` and `obj` folders as well. If that still doesn't work, you probably did something wrong yourself.
+Palettes are often the greatest enemy of an 8-bit artist... making large levels with so few colors (and color combinations, too!) tends to be an exercise in frustration...
+Well, fear no more! For this wonderful component fixes that issue... somewhat.
+"Hi-color" (aka rewriting palettes mid-frame) is not supported, so each individual screen must always conform to the same specifications as before, but nothing more!
 
-## See also
+Palettes are loaded dynamically as the camera pans.
+This is accomplished by metatiles containing IDs that index into a "global" palette, instead of simply the hardware palette number.
+Tiles leaving the screen decrease the palette's reference counter, incoming tiles increase it.
 
-If you want something more barebones, check out [gb-boilerplate](https://github.com/ISSOtm/gb-boilerplate).
-
-[Here](https://gist.github.com/ISSOtm/a9057e7c66080f36afcd82ed2863fd62) are the naming conventions used in this code; maybe you'll find them useful.
-
-I recommend the [BGB](https://bgb.bircd.org) emulator for developing ROMs on Windows and, via Wine, Linux and macOS (64-bit build available for Catalina). [SameBoy](https://github.com/LIJI32/SameBoy) is more accurate, but has a much worse interface outside of macOS.
-
-### Libraries
-
-- [Variable-width font engine](https://github.com/ISSOtm/gb-vwf)
-- [structs in RGBDS](https://github.com/ISSOtm/rgbds-structs)
+When a palette's reference counter reaches 0, its hardware slot becomes free.
+Conversely, when a palette is first referenced, it gets loaded into a free hardware slot.
+(If there are no free hardware slots, we have a problem.)
