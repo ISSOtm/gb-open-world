@@ -18,7 +18,6 @@ InitNPCGfxHeap:
 ; @return c The low byte of the ptr to the allocated block
 ;                  (i.e. the ID of the first free tile)
 ; @return! h HIGH(wNPCGfxHeap)
-; @return! c LOW(Ptr to retained block, + 1)
 ; @destroy a l b
 LoadNPCGfx:
 	ld hl, wNPCGfxHeap
