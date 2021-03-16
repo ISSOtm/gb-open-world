@@ -1,4 +1,7 @@
 
+INCLUDE "defines.asm"
+
+
 SECTION "NPC gfx loader", ROMX
 
 ; Inits the NPC gfx heap
@@ -103,6 +106,82 @@ LoadNPCGfx:
 	dec l ; Point to gfx ID
 	ld [hl], d
 	ld c, l
+	ret
+
+
+; Unloads some NPC gfx from the heap
+; ONLY CALL IF the block's ref count reached 0!!
+; @param hl Pointer to the block we wish to unload
+; @return! d HIGH(wNPCGfxHeap)
+; @destroy a e
+UnloadNPCGfx:
+	ld e, l
+	ld d, h ; ld d, HIGH(wNPCGfxHeap)
+
+	assert LOW(wNPCGfxHeap) == 0
+	xor a
+	ld l, a ; ld l, LOW(wNPCGfxHeap)
+
+	; If freeing the first block, there's no block to coalesce with before
+	or e
+	jr z, .prevNotFree
+
+	; Otherwise, look for the block *before* the one to be freed
+	; Neither this `call` nor the `error` will trigger, due to the `jr` above
+	db $CC ; call z, imm16
+.seek
+	ld l, a
+	;; DEBUG: attempt to trap broken manipulation of the free list
+	; (Could occur if attempting to free a block not in the list)
+	and a
+	error z
+
+	; Advance to "->next"
+	inc l
+	inc l
+
+	ld a, [hld] ; Read next ptr
+	cp e
+	jr nz, .seek
+
+	; Current block is before the one we wish to free; check if it itself is free
+	ld a, [hli] ; Read ref count
+	and a
+	jr nz, .prevNotFree
+	; Coalesce target block into this one
+	ld e, [hl]
+	; Point to target block's "next" byte
+	inc e
+	inc e
+	; Modify our "next" ptr to point to that block, skipping over the target block
+	ld a, [de]
+	ld [hld], a
+
+	; Skip pointing to target block, keep using current one
+	; Carry is known to be clear from `and a` above
+	db $DC ; call c, imm16
+.prevNotFree
+	ld l, e ; Go to target block
+	inc l ; Point to ref count (which is 0)
+	inc l ; Point to "next" ptr
+
+	; Point `de` to next block
+	ld e, [hl]
+	; d = HIGH(wNPCGfxHeap)
+
+	; Exit if there's no block after
+	ld a, e
+	and a
+	ret z
+
+	inc e ; Point to ref count
+	ld a, [de]
+	and a ; Check if block is free
+	ret nz ; If not free, don't coalesce
+
+	inc e ; Point to "next" ptr
+	ld a, [de]
+	ld [hl], a ; Point our own block to that one
 	ret
 
 

@@ -85,3 +85,7 @@ Tiles leaving the screen decrease the palette's reference counter, incoming tile
 When a palette's reference counter reaches 0, its hardware slot becomes free.
 Conversely, when a palette is first referenced, it gets loaded into a free hardware slot.
 (If there are no free hardware slots, we have a problem.)
+
+## Code conventions
+
+`;; DEBUG` comments indicate debug assertions that I may want to remove if they end up being too heavy.
