@@ -2,6 +2,8 @@
 
 Yes, again.
 
+(Note: for the time being, to build this repo, you should comment out all `ld b, b` blocks in `src/gb-vwf/vwf.asm`. I can't commit this *yet*, I'll see to changing it later.)
+
 ## Goal
 
 This is my second attempt at an "open-world" Game Boy (Color-only) game engine.
