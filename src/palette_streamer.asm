@@ -5,11 +5,12 @@ NB_OBJ_PALETTES equ 128
 NB_HW_PALS equ 8
 
 
-SECTION "Palette streamer", ROMX
+; There currently only 1 small routine, it's not worth moving into ROMX for now
+SECTION "Palette streamer routine", ROM0
 
 ; Inits a palette streamer struct
 ; @param hl Pointer to the base of the palette streamer
-InitPaletteStreamer:
+InitPaletteStreamer::
 	xor a
 	assert NB_BG_PALETTES == NB_OBJ_PALETTES, "Can't use same init func!"
 	;ld c, NB_BG_PALETTES * 2
@@ -25,7 +26,7 @@ SECTION "BG palette streamer", WRAM0,ALIGN[8]
 
 ; Array of ref counts indexed by the "global" BG palette ID
 ; If non-zero, then the palette is loaded somewhere in the `wBGPaletteIDs` array
-wBGPaletteCounts:
+wBGPaletteCounts::
 	ds NB_BG_PALETTES * 2
 
 	assert NB_BG_PALETTES <= 128, "Explanation below no longer true!"
@@ -40,7 +41,7 @@ SECTION "OBJ palette streamer", WRAM0,ALIGN[8]
 
 ; Same format as above
 
-wOBJPaletteCounts:
+wOBJPaletteCounts::
 	ds NB_OBJ_PALETTES * 2
 
 wOBJPaletteIDs:
