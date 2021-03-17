@@ -1,5 +1,10 @@
 
 .SUFFIXES:
+# Plain `sh` is typically used in Makefiles, but I'm afraid I may be relying on Bash-only features.
+# Plus, portability isn't a primary goal; thus, I'm enforcing Bash here.
+# If you need `sh` for some reason, and there's a compatibility issue, you can open a ticket at
+# https://github.com/ISSOtm/gb-open-world/issues
+SHELL := /bin/bash
 
 ################################################
 #                                              #
