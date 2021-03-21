@@ -130,6 +130,11 @@ fn main() {
             .collect()
     };
 
+    // TODO: check for camera positions that would load more than 7 palettes
+    eprintln!(
+        "!!! WARNING: Palette overflow verification not implemented yet, use at your own risk !!!"
+    );
+
     // Output the data
 
     if !map_name.is_ascii() {
