@@ -151,7 +151,7 @@ fn main() {
 
     println!("\tPUSHS");
     // For the map data specification, see doc/map.md
-    println!("SECTION \"{} map\", ROMX,ALIGN[8]", map_name);
+    println!("SECTION \"{} map\", ROMX", map_name);
     println!(
         "\tdw ${:04x} ; Pal table size",
         u16::try_from(
@@ -161,7 +161,7 @@ fn main() {
         )
         .unwrap()
     );
-    println!("{}Map:", map_name_titlecase);
+    println!("{}Map:  ALIGN 8", map_name_titlecase);
 
     // Chunk tables
     let print_chunk_map = |func| {
@@ -195,14 +195,25 @@ fn main() {
         }
     }
 
+    // Common tiles ptr
+    println!(".commonTiles");
+    println!(
+        "\tdb ${:02x}, BANK({}CommonTiles)",
+        get_tile_blk_len(&common_tiles_ids),
+        map_name_titlecase
+    );
+    println!("\tdw {}CommonTiles", map_name_titlecase);
+
     // Chunks
     for (i, chunk) in chunks.iter().enumerate() {
-        println!("SECTION \"{} chunk #{}\", ROMX,ALIGN[8]", map_name, i);
+        println!("SECTION \"{} chunk #{}\", ROMX", map_name, i);
+        let len = chunk.metatile_ids.len() * 4 * 4; // Per metatile, 4 entries of 4 bytes each
         println!(
-            "\tdb ${:02x} ; Metatile defs size minus 1",
-            chunk.metatile_ids.len() * 4 - 1
+            "\tdb ${:02x} + 2, ${:02x} ; Map + metatile defs size (big endian)",
+            len / 0x100,
+            len % 0x100
         );
-        println!("{}Chunk{}:", map_name_titlecase, i);
+        println!("{}Chunk{}:  ALIGN 8", map_name_titlecase, i);
 
         println!(".metatileMap");
         let mut refd_tiles: SmallVec<[usize; METATILES_PER_CHUNK]> = SmallVec::new();
@@ -269,11 +280,21 @@ fn main() {
 
         // Chunk tiles ptr
         if !refd_tiles.is_empty() {
+            println!(
+                "\tdb BANK({}Chunk{}Tiles), ${:02x}",
+                map_name_titlecase,
+                i,
+                get_tile_blk_len(&refd_tiles),
+            );
             println!("\tdw {}Chunk{}Tiles", map_name_titlecase, i);
-            println!("\tdb BANK({}Chunk{}Tiles)", map_name_titlecase, i);
         } else {
-            println!("\tdw 0 ; No tiles");
+            println!("\tdb 0 ; No tiles");
         }
+
+        // Default dynamic metatile array
+        // TODO
+        println!("\tdb 0 ; No dynamic metatiles");
+
         // TODO: other attributes
 
         // Chunk tiles block
@@ -293,15 +314,18 @@ fn main() {
     println!("\tPOPS");
 }
 
-fn print_tile_block(tiles: &[Tile], ids: &[usize], map_name_titlecase: &str, name: &str) {
-    println!("SECTION \"{} tiles\", ROMX,ALIGN[4,15]", name);
-    println!("{}{}Tiles:", map_name_titlecase, name);
+fn get_tile_blk_len<T>(ids: &[T]) -> u8 {
     assert!(
         ids.len() <= 128,
         "Can only transfer up to 128 tiles at once, not {}",
         ids.len()
     );
-    println!("\tdb ${:02x}", u8::try_from(ids.len()).unwrap() - 1);
+    u8::try_from(ids.len()).unwrap() - 1
+}
+
+fn print_tile_block(tiles: &[Tile], ids: &[usize], map_name_titlecase: &str, name: &str) {
+    println!("SECTION \"{} tiles\", ROMX", name);
+    println!("{}{}Tiles:  align 4", map_name_titlecase, name);
     for &id in ids {
         for (i, &entry) in tiles[id].0.iter().enumerate() {
             print!("{} ${:02x}", if i == 0 { "\tdb" } else { "," }, entry);

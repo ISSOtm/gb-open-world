@@ -133,6 +133,34 @@ VBlankHandler:
 	ldh a, [hOBP1]
 	ldh [rOBP1], a
 
+	ldh a, [hVRAMTransferDestHigh]
+	and a
+	jr z, .noVRAMTransfer
+	ldh [rHDMA3], a
+	ldh a, [hVRAMTransferSrcHigh]
+	ldh [rHDMA1], a
+	ldh a, [hVRAMTransferSrcLow]
+	ldh [rHDMA2], a
+	ldh a, [hVRAMTransferDestLow]
+	ldh [rHDMA4], a
+	ldh a, [hVRAMTransferSrcBank]
+	ld [rROMB0], a
+	ldh a, [rVBK]
+	ld c, a
+	ldh a, [hVRAMTransferDestBank]
+	ldh [rVBK], a
+	ldh a, [hVRAMTransferLen]
+	ldh [rHDMA5], a
+	; Restore ROM and VRAM banks
+	ldh a, [hCurROMBank]
+	ld [rROMB0], a
+	ld a, c
+	ldh [rVBK], a
+	; ACK the transfer
+	xor a
+	ldh [hVRAMTransferDestHigh], a
+.noVRAMTransfer
+
 	; OAM DMA can occur late in the handler, because it will still work even
 	; outside of VBlank. Sprites just will not appear on the scanline(s)
 	; during which it's running.
@@ -248,3 +276,13 @@ hPressedKeys:: db
 
 ; If this is 0, pressing SsAB at the same time will not reset the game
 hCanSoftReset:: db
+
+; The transfer will be started by the VBlank handler when [hVRAMTransferDestHigh] != $00
+; The VBlank handler will write $00 back
+hVRAMTransferSrcBank::  db
+hVRAMTransferSrcLow::   db
+hVRAMTransferSrcHigh::  db
+hVRAMTransferDestBank:: db
+hVRAMTransferDestLow::  db
+hVRAMTransferDestHigh:: db
+hVRAMTransferLen::      db

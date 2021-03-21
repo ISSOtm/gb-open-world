@@ -52,9 +52,9 @@ Reset::
 	jr nz, .copyOAMDMA
 
 	ld a, $E4
-	ldh [rBGP], a
-	ldh [rOBP0], a
-	ldh [rOBP1], a
+	ldh [hBGP], a
+	ldh [hOBP0], a
+	ldh [hOBP1], a
 
 	; Reset variables necessary for the VBlank handler to function correctly
 	; But only those for now
@@ -62,6 +62,7 @@ Reset::
 	ldh [hVBlankFlag], a
 	ldh [hOAMHigh], a
 	ldh [hCanSoftReset], a
+	ldh [hVRAMTransferDestHigh], a
 	dec a ; ld a, $FF
 	ldh [hHeldKeys], a
 
@@ -99,7 +100,27 @@ Reset::
 	ldh [hOAMHigh], a
 
 	; `Intro`'s bank has already been loaded earlier
-	jp Intro
+	call Intro
+
+
+	;; Main game
+
+	; Temporary var init while I write the code
+	; Set camera position to $1010 (257.0)
+	ld a, $10
+	ld [wCameraYPos], a
+	ld [wCameraYPos + 1], a
+	ld [wCameraXPos], a
+	ld [wCameraXPos + 1], a
+
+	xor a
+	call LoadMap
+	call RedrawScreen
+
+.lockup
+	rst WaitVBlank
+	jr .lockup
+
 
 SECTION "OAM DMA routine", ROMX
 
@@ -144,3 +165,15 @@ SECTION "Stack", WRAM0[$E000 - STACK_SIZE]
 	ds STACK_SIZE
 wStackBottom:
 
+
+; Some "utility" VRAM sections, so that their constraints only need to be specified once
+SECTION UNION "0:8000 tile block", VRAM[$8000],BANK[0]
+SECTION UNION "1:8000 tile block", VRAM[$8000],BANK[1]
+SECTION UNION "0:8800 tile block", VRAM[$8800],BANK[0]
+SECTION UNION "1:8800 tile block", VRAM[$8800],BANK[1]
+SECTION UNION "0:9000 tile block", VRAM[$9000],BANK[0]
+SECTION UNION "1:9000 tile block", VRAM[$9000],BANK[1]
+SECTION UNION "0:9800 tilemap", VRAM[$9800],BANK[0]
+SECTION UNION "1:9800 attrmap", VRAM[$9800],BANK[1]
+SECTION UNION "0:9C00 tilemap", VRAM[$9C00],BANK[0]
+SECTION UNION "1:9C00 attrmap", VRAM[$9C00],BANK[1]
