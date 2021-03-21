@@ -3,10 +3,14 @@
 
 (`ALIGN[8]`)
 
+0. (just before the alignment) metatile definitions size (since it may be smaller than the max 64x4 bytes) in bytes, minus 1
 1. 16×16 metatile map
-2. Array of 64 metatile definitions
+2. Array of up to 64 metatile definitions
 3. Default dynamic metatile array (len, then data; 0 = skip)
-4. Initialization routine ptr (ran last, to patch things up)
+4. 3-byte ptr to chunk tile block (or 2-byte NULL to signify none)
+5. Initialization routine ptr (ran last, to patch things up)
+
+Pointer points to 1., not 0., to improve chunk access performance
 
 ## Metatile map entry format
 

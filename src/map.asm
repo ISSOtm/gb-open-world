@@ -44,10 +44,12 @@ RedrawScreen:
 	ret
 
 
-SECTION "Temporary map headers", ROMX
+SECTION "Map headers", ROMX
 
-; These will be auto-generated from map files at some point instead
 MapHeaders:
+
+; This is auto-generated from files in `src/res/maps`
+INCLUDE "res/maps.asm"
 
 
 SECTION "Map variables", WRAM0

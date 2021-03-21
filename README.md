@@ -2,7 +2,11 @@
 
 Yes, again.
 
+## Building
+
 (Note: for the time being, to build this repo, you should comment out all `ld b, b` blocks in `src/gb-vwf/vwf.asm`. I can't commit this *yet*, I'll see to changing it later.)
+
+A Rust compiler is required for the map conversion script.
 
 ## Goal
 

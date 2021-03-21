@@ -7,3 +7,6 @@
 [submodule "src/gb-vwf"]
 	path = src/gb-vwf
 	url = https://github.com/ISSOtm/gb-vwf.git
+[submodule "src/tools/superfamiconv"]
+	path = src/tools/superfamiconv
+	url = https://github.com/optiroc/SuperFamiconv.git
