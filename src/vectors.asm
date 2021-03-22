@@ -146,7 +146,7 @@ VBlankHandler:
 	ldh a, [hVRAMTransferSrcBank]
 	ld [rROMB0], a
 	ldh a, [rVBK]
-	ld c, a
+	ldh [hVBK], a
 	ldh a, [hVRAMTransferDestBank]
 	ldh [rVBK], a
 	ldh a, [hVRAMTransferLen]
@@ -154,7 +154,7 @@ VBlankHandler:
 	; Restore ROM and VRAM banks
 	ldh a, [hCurROMBank]
 	ld [rROMB0], a
-	ld a, c
+	ldh a, [hVBK]
 	ldh [rVBK], a
 	; ACK the transfer
 	xor a
@@ -286,3 +286,5 @@ hVRAMTransferDestBank:: db
 hVRAMTransferDestLow::  db
 hVRAMTransferDestHigh:: db
 hVRAMTransferLen::      db
+
+hVBK: db ; [rVBK] gets saved to here when doing a VRAM transfer
