@@ -103,7 +103,6 @@ HandleCrash::
 REPT 3 * 2
 	ldh [c], a
 ENDR
-	; TODO: SGB palettes?
 
 	ld a, SCRN_VY - SCRN_Y
 	ldh [rSCY], a
@@ -397,7 +396,7 @@ INCLUDE "res/crash_font.1bpp.pb8.size"
 	xor LOW(vCrashDumpScreen.row5 + 47)
 	ld l, a
 	call .printDump
-	
+
 	; Now, let's highlight the selected dump region
 	ld a, [vWhichDump] ; 0 or 2
 	swap a ; 0 or 32
