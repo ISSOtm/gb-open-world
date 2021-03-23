@@ -72,6 +72,23 @@ Reset::
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
 
+	; If on CGB and not in double-speed mode, switch to double-speed mode
+	; We might be in double-speed already if soft-resetting
+	ldh a, [hConsoleType]
+	and a ; If not 0, we're not on a CGB
+	jr nz, .noSpeedSwitch
+	ldh a, [rKEY1]
+	add a, a ; Bit 7 set for double-speed
+	jr c, .noSpeedSwitch ; We are already in double-speed, don't switch
+	ld a, $30
+	ldh [rP1], a
+	xor a
+	ldh [rIE], a
+	inc a ; ld a, 1
+	ldh [rKEY1], a
+	stop ; Perform speed switch
+.noSpeedSwitch
+
 	; Select wanted interrupts here
 	; You can also enable them later if you want
 	ld a, IEF_VBLANK
