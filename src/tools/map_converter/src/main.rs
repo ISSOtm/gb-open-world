@@ -258,12 +258,12 @@ fn main() {
                 .find(|(_, &id)| id == usize::from(entry.id))
                 .map_or_else(
                     || {
-                        *refd_tiles
+                        refd_tiles
                             .iter()
                             .enumerate()
                             .find(|(_, &id)| id == usize::from(entry.id))
                             .expect("Tiles should be either common or per-chunk!?")
-                            .1
+                            .0
                     },
                     |(i, _)| i | 0xC0,
                 );
