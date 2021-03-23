@@ -203,9 +203,9 @@ fn main() {
     // Common tiles ptr
     println!(".commonTiles");
     println!(
-        "\tdb ${:02x}, BANK({}CommonTiles)",
+        "\tdb BANK({}CommonTiles), ${:02x}",
+        map_name_titlecase,
         get_tile_blk_len(&common_tiles_ids),
-        map_name_titlecase
     );
     println!("\tdw {}CommonTiles", map_name_titlecase);
 
@@ -270,12 +270,12 @@ fn main() {
             let attrs = u8::from(entry.xflip) << 5 | u8::from(entry.yflip) << 6;
             println!(
                 "\tdb ${:02x}, ${:02x}, ${:02x}, ${:02x}",
-                tile_id, entry.pal_id, attrs, 0
+                entry.pal_id, tile_id, attrs, 0
             );
         };
         println!(".metatiles ; For the metatile data specification, see doc/metatile.md");
         for (i, &id) in chunk.metatile_ids.iter().enumerate() {
-            println!("\t; Metatile #{}", i);
+            println!("\t; Metatile ${:02x}", i);
             let metatile = &metatiles[usize::from(id)];
             print_metatile(&metatile.top_left);
             print_metatile(&metatile.top_right);

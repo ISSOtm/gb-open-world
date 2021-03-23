@@ -123,8 +123,8 @@ Reset::
 	;; Main game
 
 	; Temporary var init while I write the code
-	; Set camera position to $1010 (257.0)
-	ld a, $10
+	; Set camera position to $0808 (128.5)
+	ld a, $08
 	ld [wCameraYPos], a
 	ld [wCameraYPos + 1], a
 	ld [wCameraXPos], a
@@ -133,6 +133,25 @@ Reset::
 	xor a
 	call LoadMap
 	call RedrawScreen
+	call FadePaletteBuffers
+
+	; FIXME: temporary
+	ld a, [wCameraYPos]
+	ld l, a
+	ld a, [wCameraYPos + 1]
+	xor l
+	and $0F
+	xor l
+	swap a
+	ldh [hSCY], a
+	ld a, [wCameraXPos]
+	ld l, a
+	ld a, [wCameraXPos + 1]
+	xor l
+	and $0F
+	xor l
+	swap a
+	ldh [hSCX], a
 
 .lockup
 	rst WaitVBlank
@@ -181,6 +200,11 @@ SECTION "Stack", WRAM0[$E000 - STACK_SIZE]
 
 	ds STACK_SIZE
 wStackBottom:
+
+
+; This is a buffer to be used by functions for variables that will not outlive their scope
+; Be careful when calling a function from another module, check that it won't overwrite anything stored here!
+SECTION UNION "Scratch buffer", HRAM
 
 
 ; Some "utility" VRAM sections, so that their constraints only need to be specified once

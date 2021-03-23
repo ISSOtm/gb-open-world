@@ -9,11 +9,11 @@ FadePaletteBuffers::
 	ld hl, wFadeSteps
 	dec [hl]
 	inc hl
-	assert wFadeSteps + 1 == wFadeStep
+	assert wFadeSteps + 1 == wFadeDelta
 
 	ld a, [hli]
 	ld e, a
-	assert wFadeStep + 1 == wFadeAmount
+	assert wFadeDelta + 1 == wFadeAmount
 	add a, [hl]
 	jr z, .clamp ; 0 is an illegal value
 	ld d, a
@@ -212,7 +212,7 @@ hPaletteMask: db
 SECTION "Fade state memory", WRAM0
 
 wFadeSteps:: db ; Number of fade steps to take
-wFadeStep:: db ; Value to add to wFadeAmount on each step
+wFadeDelta:: db ; Value to add to wFadeAmount on each step
 
 ; 00    = bugged equivalent of 80, do not use
 ; 01-7F = 01 is fully black, 7F is barely faded
