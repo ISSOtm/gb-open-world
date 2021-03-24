@@ -140,6 +140,7 @@ hTLChunk: ds 2 ; For each, high byte then bank
 hTRChunk: ds 2
 hBLChunk: ds 2
 hBRChunk: ds 2
+hDrawBlkBits: db ; Bits 6 and 3 indicate the chunk block gfx offset
 hRowDrawCnt: db ; How many tiles left to draw in this row
 	POPS
 
@@ -184,10 +185,21 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	or HIGH(_SCRN0)
 	ld d, a
 
-	; Compute low byte of ptr from camera pos (see VRAM dest addr comment above)
+	; Compute block offsets, where we only care about bit 4 of the upper byte (the chunk pos parity)
 	ld a, [wCameraYPos + 1]
-	swap a ; Multiply Y pos by 16, since chunks are 16 metatiles wide
-	ld l, a
+	ld l, a ; Store for computation below
+	rlca ; Get it to bit 6, the 64ths offset
+	rlca
+	and 64 ; $40
+	ld h, a
+	ld a, [wCameraXPos + 1]
+	rrca ; Get bit 4 into bit 3 (attr VRAM bank)
+	and OAMF_BANK1 ; $08
+	or h
+	ldh [hDrawBlkBits], a
+
+	; Compute low byte of ptr from camera pos (see VRAM dest addr comment above)
+	swap l ; Multiply Y pos by 16, since chunks are 16 metatiles wide
 	ld a, [wCameraXPos + 1]
 	xor l
 	and $0F ; Keep $0F from X pos, and $F0 from Y pos
@@ -235,23 +247,29 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ld a, [hli] ; Read palette ID
 	; TODO: ref palette, possibly load it, and translate it to the corresponding hardware palette
 	; For now, we translate palette IDs 1:1 to hardware palette IDs
+	;
 	ld b, a
-	; By default, set VRA1 attribute bit to 1
-	set OAMB_BANK1, b
+	; Use the chunk's bank bit
+	ldh a, [hDrawBlkBits]
+	or b ; Bit 6 also gets trashed, but it'll be ignored later on
+	ld b, a
 
 	xor a
 	ldh [rVBK], a
 :
 	ldh a, [rSTAT]
 	and STATF_BUSY
-	jr nz, :- ; From that point on, we have 16 cycles to write to VRAM
+	jr nz, :- ; From that point on, we have 32 cycles to write to VRAM
 	ld a, [hli] ; Read tile ID
 	bit 7, a ; Check if tile is in "common" block
 	jr nz, .commonTile ; If so, no translation needs to be performed
 	; Tile may either be in block 0/1 (even chunk row, no offset) or block 2/3 (odd chunk row, set bit 6)
-	; Check if within block 0/2, if so clear VRA1 bit
-	; TODO
+	xor b
+	and ~64 ; Only keep B's bit 6
+	xor b
+	db $DC ; call c, imm16 (skip next 2-byte instruction)
 .commonTile
+	set OAMB_BANK1, b ; Force VRA1 if using a "common" tile
 	ld [de], a
 
 	; Write attribute
@@ -260,10 +278,10 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 :
 	ldh a, [rSTAT]
 	and STATF_BUSY
-	jr nz, :- ; From that point on, we have 16 cycles to write to VRAM
+	jr nz, :- ; From that point on, we have 32 cycles to write to VRAM
 	ld a, [hli]
 	xor b
-	and $E0
+	and $E0 ; We're not just doing `or b` because its bit 6 may be set, and we need to ignore the attr's bits 0-4
 	xor b
 	ld [de], a
 
@@ -295,6 +313,14 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	add a, 16 ; Go to next row (can't overflow)
 .noNextInputRow
 	ld l, a
+	; If we changed chunks (toggling the VRAM bank bit), toggle it back
+	and $0F
+	cp 16 - SCRN_X_B / 2
+	jr c, .stayedOnSameChunk
+	ldh a, [hDrawBlkBits]
+	xor OAMF_BANK1
+	ldh [hDrawBlkBits], a
+.stayedOnSameChunk
 	; Go to next output row as well
 	ld a, e
 	sub SCRN_X_B + 1
@@ -312,6 +338,10 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	cp d ; Check if the wrapping did occur
 	jr z, .noVertWrap
 	ld d, a ; Apply the wrapping
+	; Toggle vertical chunk offset
+	ldh a, [hDrawBlkBits]
+	xor 64
+	ldh [hDrawBlkBits], a
 	; Src addr wraps on its own (the metatile map is 256 bytes, so 8-bit ops implicitly wrap)
 	ld c, LOW(hBLChunk) ; Switch to bottom two chunks
 .noVertWrap
@@ -358,6 +388,10 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ldh a, [c] ; Read bank and switch to it
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
+	; Toggle target VRAM bank
+	ldh a, [hDrawBlkBits]
+	xor OAMF_BANK1
+	ldh [hDrawBlkBits], a
 	ret
 
 
