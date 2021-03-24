@@ -64,7 +64,21 @@ LoadMap::
 RedrawScreen::
 	; First, reset the BG palette streamer, since we're redrawing from scratch
 	ld hl, wBGPaletteCounts
-	call InitPaletteStreamer
+	xor a
+	assert wBGPaletteCounts.end - wBGPaletteCounts == 256
+	ld c, a ; ld c, 0
+	rst MemsetSmall
+	; Don't overwrite the whole array, though: keep "reserved" slots (and free ones) intact!
+	assert wBGPaletteIDs == wBGPaletteCounts.end
+	ld c, wBGPaletteIDs.end - wBGPaletteIDs
+.freeUpSlots
+	bit 0, [hl]
+	jr nz, .skipSlot
+	ld [hl], 1
+.skipSlot
+	inc l
+	dec c
+	jr nz, .freeUpSlots
 
 	ld a, [wMapPtrHigh]
 	ld d, a
@@ -245,11 +259,59 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ld l, a
 
 	ld a, [hli] ; Read palette ID
-	; TODO: ref palette, possibly load it, and translate it to the corresponding hardware palette
-	; For now, we translate palette IDs 1:1 to hardware palette IDs
-	;
-	ld b, a
-	; Use the chunk's bank bit
+	; Ref palette, possibly load it, and translate it to the corresponding hardware palette
+	push hl
+	; First, increase that palette's ref count
+	add a, a
+	assert LOW(wBGPaletteCounts) == 0
+	ld l, a
+	ld h, HIGH(wBGPaletteCounts)
+	ld a, [hl]
+	inc a
+	ld [hli], a
+	jr nz, :+
+	inc [hl] ; Apply carry
+:
+	; Check if we just increased the ref count to 1
+	dec a ; Check if low byte is 1...
+	or [hl]
+	; Load 2 variables for the loops below
+	ld a, l ; Keep the palette ID (times 2, plus 1) for comparing
+	lb hl, HIGH(wBGPaletteIDs), LOW(wBGPaletteIDs) - 1
+	; Having Z here implies `(a - 1) | [hl] == 0`
+	; ⇔ `a - 1 == 0` && `[hl] == 0`
+	; ⇔ `a == 1` && `[hl] == 0`, and since A holds the counter's low byte & [HL] its high byte,
+	; ⇔ counter == 1, which is what we want! :)
+	jr nz, .alreadyLoaded
+	; Palette just became referenced, so find a free hardware slot to load to
+.lookupFreeSlot
+	inc l ; Go to next slot
+	ld b, [hl]
+	dec b ; Free slots are exactly $01
+	jr nz, .lookupFreeSlot
+	; The palette will be actually loaded later
+	dec a ; The palette ID is actually 1 too high
+	ld [hl], a
+	; Assert that the selected slot is actually valid (below 8); this does incur a small overhead,
+	; but this loop should only occur up to 8 times, so it's acceptable, to catch a likely bug.
+	bit 3, l
+	jr z, .gotPaletteSlot ; Still make the most likely path the fastest
+	rst Crash
+	; ---------------------------
+.alreadyLoaded
+	; Find the slot the slot is referenced in
+	dec a ; The palette ID is actually 1 too high
+.seekPalette
+	inc l ; Go to next palette
+	cp [hl]
+	jr nz, .seekPalette ; We expect this loop to terminate, as reaching this loop means the palette is loaded
+	; FIXME: maybe check that the slot is valid... but that may incur a certain runtime cost
+.gotPaletteSlot
+	assert LOW(wBGPaletteIDs) == 0
+	ld b, l ; The low byte of the pointer equals the palette slot
+	pop hl ; Get back metatile entry read ptr
+
+	; Incorporate the chunk's bank bit into the attrs
 	ldh a, [hDrawBlkBits]
 	or b ; Bit 6 also gets trashed, but it'll be ignored later on
 	ld b, a
@@ -270,20 +332,16 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	db $DC ; call c, imm16 (skip next 2-byte instruction)
 .commonTile
 	set OAMB_BANK1, b ; Force VRA1 if using a "common" tile
-	ld [de], a
+	ld [de], a ;; *** VRAM WRITE ***
 
 	; Write attribute
 	ld a, 1
 	ldh [rVBK], a
-:
-	ldh a, [rSTAT]
-	and STATF_BUSY
-	jr nz, :- ; From that point on, we have 32 cycles to write to VRAM
 	ld a, [hli]
 	xor b
 	and $E0 ; We're not just doing `or b` because its bit 6 may be set, and we need to ignore the attr's bits 0-4
 	xor b
-	ld [de], a
+	ld [de], a ;; *** VRAM WRITE ***
 
 	pop hl ; Get back metatile read ptr
 	; If we just wrote a metatile's rightmost tile, switch to the next one
@@ -349,25 +407,59 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	dec b
 	jp nz, .drawRow ; FIXME: optimize loop?
 
-	; FIXME: For now, palette referencing isn't implemented, so hardcode-load the palettes
+
+	; Now that the entire screen has been drawn, on-screen palettes have been referenced.
+	; Since the redrawing process begun by unloading all palettes, all palettes that are now marked
+	; as loaded were marked as such above; thus, we need to load them.
 	ld a, [wMapBank]
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
+	ld de, wBGPaletteBuffer
+	ld c, LOW(wBGPaletteIDs)
+.processPalSlot
+	ld b, HIGH(wBGPaletteIDs)
+	ld a, [bc]
+	assert HIGH(wBGPaletteIDs.end) == HIGH(wBGPaletteIDs) ; Can't carry
+	inc c ; inc bc
+	bit 0, a
+	jr nz, .notRefd
+	; Palettes are 4 * 3 bytes large, compute the offset into the table
+	; (Note: A currently contains the palette ID *times 2*)
+	; Multiply by 3 (total: * 3 * 2)
+	ld l, a ; 0-extend A to 16 bits into HL (I typically avoid 16-bit `add`, but there's no alternative here)
+	ld h, 0
+	add hl, hl ; Multiply by 2
+	add a, l ; Add A again to HL so that HL = 3 * A
+	ld l, a
+	adc a, h
+	sub l
+	ld h, a
+	; Multiply by 2 (total: * 3 * 4)
+	add hl, hl
 	ld a, [wMapPtrHigh]
-	add a, 2 ; Go to map palette table
-	ld d, a
-	ld e, 0
-	ld hl, wFadeSteps
-	xor a
-	ld [hli], a ; wFadeSteps
-	ld [hli], a ; wFadeDelta
-	ld a, $80
-	ld [hli], a ; wFadeAmount
-	ld a, $FF
-	ld [hli], a ; wBGPaletteMask
-	ld c, 8 * 4 * 3
-	rst MemcpySmall
-	ld [hl], 0 ; wOBJPaletteMask
+	add a, 2
+	add a, h
+	ld h, a
+	ld b, 3 * 4
+.copyPal
+	ld a, [hli]
+	ld [de], a
+	assert HIGH(wBGPaletteBuffer.end) == HIGH(wBGPaletteBuffer)
+	inc e ; inc de
+	dec b
+	jr nz, .copyPal
+	jr :+ ; Don't advance write ptr, the copy already did it
+.notRefd
+	; Advance write ptr
+	assert HIGH(wBGPaletteBuffer.end) == HIGH(wBGPaletteBuffer) ; Can't carry
+	ld a, e
+	add a, 3 * 4
+	ld e, a
+:
+	assert HIGH(wBGPaletteIDs.end) == HIGH(wBGPaletteIDs) ; No two bytes have the same low byte, so checking just for it is sufficient
+	ld a, c
+	cp LOW(wBGPaletteIDs.end)
+	jr nz, .processPalSlot
 	ret
 
 

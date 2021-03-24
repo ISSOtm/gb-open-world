@@ -122,6 +122,13 @@ Reset::
 
 	;; Main game
 
+	; Screen redrawing expects to run over already-loaded palettes;
+	; Thus, we need to init the dynamic palette array to "all free"
+	ld hl, wBGPaletteIDs
+	ld c, wBGPaletteIDs.end - wBGPaletteIDs
+	xor a
+	rst MemsetSmall
+
 	; Temporary var init while I write the code
 	; Set camera position to $0808 (128.5)
 	ld a, $08
@@ -133,7 +140,6 @@ Reset::
 	xor a
 	call LoadMap
 	call RedrawScreen
-	call FadePaletteBuffers
 
 	; FIXME: temporary
 	ld a, [wCameraYPos]
@@ -152,6 +158,29 @@ Reset::
 	xor l
 	swap a
 	ldh [hSCX], a
+
+	; Compute the palette mask from which slots are loaded
+	ld hl, wBGPaletteIDs
+	lb bc, 0, 8
+	; Carry currently clear (`swap a`)
+.checkSlot
+	ld a, [hli]
+	cp 1
+	jr z, .slotIsFree
+	scf
+.slotIsFree
+	rl b ; Shift carry in, and also clear carry
+	dec c
+	jr nz, .checkSlot
+	ld hl, wFadeSteps
+	xor a
+	ld [wOBJPaletteMask], a
+	ld [hli], a ; wFadeSteps
+	ld [hli], a ; wFadeDelta
+	ld a, $80
+	ld [hli], a ; wFadeAmount
+	ld [hl], b ; wBGPaletteMask
+	call FadePaletteBuffers
 
 .lockup
 	rst WaitVBlank

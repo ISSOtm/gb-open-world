@@ -209,7 +209,7 @@ SECTION UNION "Scratch buffer", HRAM
 
 hPaletteMask: db
 
-SECTION "Fade state memory", WRAM0
+SECTION "Fade state memory", WRAM0,ALIGN[8] ; Ensure that palette bufs don't cross pages
 
 wFadeSteps:: db ; Number of fade steps to take
 wFadeDelta:: db ; Value to add to wFadeAmount on each step
@@ -223,6 +223,8 @@ wFadeAmount:: db
 wBGPaletteMask:: db ; Mask of which palettes to fade (01234567)
 wBGPaletteBuffer:: ; 24-bit GRB, in this order
 	ds 8 * 4 * 3 ; 8 palettes, 4 colors, 3 bytes
+.end::
 wOBJPaletteMask:: db
 wOBJPaletteBuffer:: ; Same as above
 	ds 8 * 3 * 3 ; Same, but only 3 colors
+.end::
