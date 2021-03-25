@@ -96,7 +96,7 @@ RedrawScreen::
 	and $0F ; Keep the low 4 bits from A, use the upper 4 bits from C
 	xor c
 	ld e, a
-	ld b, a ; Also save the camera's current chunk for the drawing loop
+	push de ; Also save the camera's current chunk for the drawing loop; matched by a `pop hl` below
 	; We need to load 4 chunks, and this may not be the top-left one; account for that
 	; For an explanation of chunk loading, see `doc/chunk.md`
 	; The camera's center pixel is (80, 72) pixels away from the top-left,
@@ -162,8 +162,9 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ld a, [wMapBank]
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
-	ld l, b ; Restore which chunk we're reading from (might have been changed by horiz wrapping)
+	pop hl ; Restore which chunk we're reading from (might have been changed by horiz wrapping); matches a `push de` above
 	ld h, d
+	ld b, l ; Save for next row
 	ld c, LOW(hTLChunk)
 	call .copyChunksPtr
 	ld a, b ; Again, but with next row
@@ -215,7 +216,7 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	or h
 	ldh [hDrawBlkBits], a
 
-	; Compute low byte of ptr from camera pos (see VRAM dest addr comment above)
+	; Compute low byte of src ptr within chunk, from camera pos (see VRAM dest addr comment above)
 	swap l ; Multiply Y pos by 16, since chunks are 16 metatiles wide
 	ld a, [wCameraXPos + 1]
 	xor l
@@ -557,8 +558,14 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ldh [c], a
 	inc c
 	inc h
-	ld a, [hli] ; Copy bank
+	ld a, [hl] ; Copy bank
 	ldh [c], a
+	ld a, l
+	inc a
+	xor l
+	and $0F
+	xor l
+	ld l, a
 	inc c
 	dec h
 	dec e
