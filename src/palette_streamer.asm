@@ -37,6 +37,10 @@ wBGPaletteCounts::
 ;     This is useful e.g. if coming from another menu which overwrote this
 ; Note: a free slot should be exactly $01; other values with the U bit set indicate that the
 ; palette slot is not available for dynamic allocation (e.g. reserved by UI)
+;
+; Info: here's how the main loop's map loader treats palettes for fading
+; If bit 0 is reset, the palette is always faded
+; Otherwise, the palette is faded if and only if bit 1 is set
 wBGPaletteIDs::
 	ds NB_HW_PALS
 .end::

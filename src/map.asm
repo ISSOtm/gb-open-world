@@ -158,7 +158,7 @@ hDrawBlkBits: db ; Bits 6 and 3 indicate the chunk block gfx offset
 hRowDrawCnt: db ; How many tiles left to draw in this row
 	POPS
 
-	; Cache chunk pointers into HRAM so that it doesn't
+	; Cache chunk pointers into HRAM to avoid switching banks over and over
 	ld l, b ; Restore which chunk we're reading from (might have been changed by horiz wrapping)
 	ld h, d
 	ld c, LOW(hTLChunk)
