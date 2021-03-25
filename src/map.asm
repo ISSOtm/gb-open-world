@@ -159,6 +159,9 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	POPS
 
 	; Cache chunk pointers into HRAM to avoid switching banks over and over
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
 	ld l, b ; Restore which chunk we're reading from (might have been changed by horiz wrapping)
 	ld h, d
 	ld c, LOW(hTLChunk)

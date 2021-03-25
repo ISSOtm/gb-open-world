@@ -19,7 +19,7 @@ Main::
 
 	; Temporary var init while I write the code
 	; Set camera position to $0808 (128.5)
-	ld a, $08
+	ld a, $01
 	ld [wCameraYPos], a
 	ld [wCameraYPos + 1], a
 	ld [wCameraXPos], a
