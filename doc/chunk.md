@@ -46,13 +46,22 @@ This is necessary because the camera's frame can straddle 4 different quadrants.
 
 There are 4 chunk gfx slots:
 
-Slot # | Address
--------+--------
-0      | 0:9000
-1      | 1:9000
-2      | 0:9400
-3      | 1:9400
+| Slot # | Address |
+|-------:|:--------|
+|      0 | 0:9000  |
+|      1 | 1:9000  |
+|      2 | 0:9400  |
+|      3 | 1:9400  |
 
 Which of the 4 gfx slots a chunk's tiles get loaded in is simply determined by its position.
 If it's on an even chunk map row, it gets loaded into slot 0 or 1; otherwise slot 2 or 3.
 If it's on an even chunk map column, it gets loaded into slot 0 or 2; otherwise slot 1 or 3.
+
+Therefore, non-"common" tiles are stored at...
+
+|              | Even chunk X | Odd chunk X  |
+|-------------:|:------------:|:------------:|
+| Even chunk Y |    0:9000    |    1:9000    |
+|  Odd chunk Y |    0:9400    |    1:9400    |
+
+Therefore, the Y position determines the VRAM location (address bit 10 / tile ID bit 6), and the X position the VRAM bank (attribute bit 3).
