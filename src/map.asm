@@ -63,6 +63,7 @@ LoadMap::
 
 RedrawScreen::
 	; First, reset the BG palette streamer, since we're redrawing from scratch
+	; This means marking all slots currently marked as "occupied" free
 	ld hl, wBGPaletteCounts
 	xor a
 	assert wBGPaletteCounts.end - wBGPaletteCounts == 256
@@ -270,6 +271,7 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	assert LOW(wBGPaletteCounts) == 0
 	ld l, a
 	ld h, HIGH(wBGPaletteCounts)
+	ld b, l ; Keep the palette ID (times 2) for comparing
 	ld a, [hl]
 	inc a
 	ld [hli], a
@@ -280,31 +282,29 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	dec a ; Check if low byte is 1...
 	or [hl]
 	; Load 2 variables for the loops below
-	ld a, l ; Keep the palette ID (times 2, plus 1) for comparing
 	lb hl, HIGH(wBGPaletteIDs), LOW(wBGPaletteIDs) - 1
 	; Having Z here implies `(a - 1) | [hl] == 0`
 	; ⇔ `a - 1 == 0` && `[hl] == 0`
 	; ⇔ `a == 1` && `[hl] == 0`, and since A holds the counter's low byte & [HL] its high byte,
 	; ⇔ counter == 1, which is what we want! :)
 	jr nz, .alreadyLoaded
-	; Palette just became referenced, so find a free hardware slot to load to
+	; Palette just became referenced, so find a free hardware slot to load into
 .lookupFreeSlot
 	inc l ; Go to next slot
-	ld b, [hl]
-	dec b ; Free slots are exactly $01
-	jr nz, .lookupFreeSlot
-	; The palette will be actually loaded later
-	dec a ; The palette ID is actually 1 too high
-	ld [hl], a
 	; Assert that the selected slot is actually valid (below 8); this does incur a small overhead,
 	; but this loop should only occur up to 8 times, so it's acceptable, to catch a likely bug.
 	bit 3, l
-	jr z, .gotPaletteSlot ; Still make the most likely path the fastest
-	rst Crash
+	error nz
+	ld a, [hl]
+	dec a ; Free slots are exactly $01
+	jr nz, .lookupFreeSlot
+	ld [hl], b
+	; The palette will be actually loaded later
+	jr .gotPaletteSlot ; Still make the most likely path the fastest
 	; ---------------------------
 .alreadyLoaded
-	; Find the slot the slot is referenced in
-	dec a ; The palette ID is actually 1 too high
+	; Find the slot the palette is referenced in
+	ld a, b ; Get ID * 2 in A for comparing
 .seekPalette
 	inc l ; Go to next palette
 	cp [hl]
@@ -312,13 +312,12 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	; FIXME: maybe check that the slot is valid... but that may incur a certain runtime cost
 .gotPaletteSlot
 	assert LOW(wBGPaletteIDs) == 0
-	ld b, l ; The low byte of the pointer equals the palette slot
-	pop hl ; Get back metatile entry read ptr
 
 	; Incorporate the chunk's bank bit into the attrs
 	ldh a, [hDrawBlkBits]
-	or b ; Bit 6 also gets trashed, but it'll be ignored later on
+	or l ; Bit 6 also gets trashed, but it'll be ignored later on
 	ld b, a
+	pop hl ; Get back metatile entry read ptr
 
 	xor a
 	ldh [rVBK], a
@@ -348,17 +347,17 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 	ld [de], a ;; *** VRAM WRITE ***
 
 	pop hl ; Get back metatile read ptr
+	inc e ; Go to next tile
 	; If we just wrote a metatile's rightmost tile, switch to the next one
-	bit 0, e
-	jr z, .wroteLeftTile
+	ld a, e
+	rra ; Carry is clear from above `xor b`
+	jr c, .wroteLeftTile
 	inc l ; inc hl
+	; Check for and handle wrapping
+	and $1F >> 1
+	call z, .wrapHoriz
 .wroteLeftTile
 
-	inc e ; Go to next tile
-	; Check for and handle wrapping
-	ld a, e
-	and $1F
-	call z, .wrapHoriz
 	ldh a, [hRowDrawCnt]
 	dec a
 	jr nz, .drawTile
@@ -583,17 +582,10 @@ INCLUDE "res/maps.asm"
 
 SECTION "Map variables", WRAM0
 
-wMapBank:
+wMapBank::
 	db
-wMapPtrHigh:
+wMapPtrHigh::
 	db
-
-SECTION "Camera variables", WRAM0
-
-wCameraYPos::
-	dw
-wCameraXPos::
-	dw
 
 SECTION "Map flags", WRAM0,ALIGN[LOG_NB_MAP_FLAGS]
 

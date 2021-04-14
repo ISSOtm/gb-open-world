@@ -16,6 +16,11 @@ LoadMapStateUpdate:
 	ld a, STATE_NORMAL
 	ld [wAfterFadeState], a
 
+	; Since we'll be fading out, we'll need to disable camera movement (lest the fade params
+	; will be overwritten!)
+	ld a, CAM_STATIC
+	ld [wCameraMovtType], a
+
 	; Use that time to compute fade-in params
 	; Compute the palette mask from which slots are loaded
 	ld hl, wBGPaletteIDs

@@ -9,6 +9,9 @@ INCLUDE "rgbds-structs/structs.asm"
 INCLUDE "res/charmap.asm"
 
 
+SUBPX_PER_PX equ 16
+
+
 ; A couple more hardware defines
 
 NB_SPRITES equ 40

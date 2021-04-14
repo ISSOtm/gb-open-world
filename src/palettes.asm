@@ -209,7 +209,7 @@ SECTION UNION "Scratch buffer", HRAM
 
 hPaletteMask: db
 
-SECTION "Fade state memory", WRAM0,ALIGN[8] ; Ensure that palette bufs don't cross pages
+SECTION "Fade state memory", WRAM0,ALIGN[9] ; Ensure that palette bufs don't cross pages
 
 wFadeSteps:: db ; Number of fade steps to take
 wFadeDelta:: db ; Value to add to wFadeAmount on each step

@@ -18,15 +18,19 @@ Main::
 
 
 	; Temporary var init while I write the code
+	; Load map 0
+	xor a
+	ld [wNextMap], a
 	; Set camera position to $0808 (128.5)
-	ld a, $01
+	ld a, $02
 	ld [wCameraYPos], a
 	ld [wCameraYPos + 1], a
 	ld [wCameraXPos], a
 	ld [wCameraXPos + 1], a
-	; Load map 0
-	xor a
-	ld [wNextMap], a
+	ld [wCameraTargetYPos], a
+	ld [wCameraTargetYPos + 1], a
+	ld [wCameraTargetXPos], a
+	ld [wCameraTargetXPos + 1], a
 
 
 	; Begin the main loop by fading in
@@ -70,6 +74,31 @@ MainLoop:
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
 	call JumpToPtr
+
+
+	;; Move camera towards focal point
+	ld a, BANK(CameraMovtFuncs)
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld a, [wCameraMovtType]
+	add a, a
+	add a, LOW(CameraMovtFuncs)
+	ld l, a
+	adc a, HIGH(CameraMovtFuncs)
+	sub l
+	ld h, a
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	rst CallHL
+
+	; Do not call the camera movement function if movement is disabled
+	; This is important, because camera movement alters palette fading parameters, in order
+	; to load palettes dynamically. (Remember that the palette fader is also the committer!)
+	; Therefore, when doing palette operations across frames, you will want not to run this
+	ld a, [wCameraMovtType]
+	and a
+	call nz, MoveCamera
 
 
 	;; Move scrolling to new camera position
