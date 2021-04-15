@@ -130,6 +130,7 @@ MoveCamera::
 	add hl, bc
 	PUSHS
 SECTION UNION "Scratch buffer", HRAM
+hChunkGfxBank: ; db ; Use does not overlap with variable below, so it shares memory
 hMetatileOfs: db ; Offset within the metatile definition (%0000 VH00)
 hChunkPtrLow: db ; Low byte of the pointer in the chunk map
 hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
@@ -232,12 +233,138 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	dec e
 	jr nz, .unloadRow
 
-	; Alright, now we can draw the new row!
+	; Seize the opportunity to schedule loading new chunk gfx
+	; New gfx loading happens when the imaginary line in the middle of the camera crosses
+	; the imaginary line in the middle of the chunk. This is easily proven to happen at the
+	; same time as redrawing a row, so we check for it here.
+	; Since the camera moves up to 1 row at a time, it's sufficient to check which row the
+	; camera is currently pointing to (depending on the movement direction)
 	ld hl, wCameraYPos
 	ld a, [hli]
-	ld h, [hl]
+	ld h, [hl] ; Save camera position for later
 	ld l, a
-	bit 7, d
+	add a, a ; Shift tile position bit into carry
+	ld a, h
+	rla ; Rotate tile position bit in
+	and $1F ; Get tile position within chunk
+	rlc d ; Make sure to preserve direction bit in bit 0 for below!
+	; The target tile position is 6 when moving upwards, and 7 when moving downwards
+	ccf ; Have carry set iff moving downwards
+	sbc a, 6
+	jr nz, .noVertChunkLoading
+	; Schedule loading the two new chunks' gfx
+	; Compute the current chunk's position in the map, and offset it
+	ld a, [wCameraXPos + 1]
+	ld e, a
+	swap a
+	ld c, a
+	ld a, h
+	xor c
+	and $F0
+	xor c
+	bit 0, d ; Check movement direction
+	jr z, :+
+	sub 16 * 2 ; When moving upwards, go up one row (and another one to compensate for below)
+:
+	add a, 16 ; When moving downwards, go down one row
+	ld l, a
+	; If the camera is "leaning" towards the left half of the chunk, go one chunk to the right
+	; Fortunately, the "middle X position", in pixels, is $30, so we can just check the high
+	; byte of the camera's X position.
+	add a, a
+	ld a, e ; Get HIGH(camera's X position)
+	and $0F ; Only keep the (meta-)tile position
+	sub 3
+	add a, a ; Check sign bit
+	jr nc, .leaningRight
+	; Move left while staying in the same row
+	ld a, l
+	dec l
+	xor l
+	and $F0
+	xor l
+	ld l, a
+.leaningRight
+	; Now, we need to determine which of the 4 slots the (left) chunk will be loaded into
+	ld c, LOW(hChunkGfxPtrs)
+	bit 0, l ; Odd X position?
+	jr z, :+
+	assert LOW(hChunkGfxPtrs.topLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.topRight) & $08 == $08
+	assert LOW(hChunkGfxPtrs.bottomRight) & $08 == $08
+	set 3, c
+:
+	bit 4, l ; Odd Y position?
+	jr z, :+
+	assert LOW(hChunkGfxPtrs.topLeft) & $04 == 0
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $04 == $04
+	assert LOW(hChunkGfxPtrs.topRight) & $04 == 0
+	assert LOW(hChunkGfxPtrs.bottomRight) & $04 == $04
+	set 2, c
+:
+	ld a, l ; Save the other chunk's position
+	inc a
+	xor l
+	and $0F
+	xor l
+	ld e, a
+	ld b, c ; Save original write ptr low, for loop termination
+.loadHorizChunkStrip
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld a, [wMapPtrHigh]
+	ld h, a
+	inc h ; Switch to bank map
+	ld a, [hl]
+	dec h ; Switch to HIGH(ptr) map
+	ld h, [hl] ; Read HIGH(chunk ptr)
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	; Read tables size
+	dec h
+	ld l, -2
+	ld a, [hli] ; Read high byte of post-metatile offset
+	ld l, [hl] ; Read low byte of post-metatile offset (added to an ALIGN[8] address, so...)
+	add a, h
+	ld h, a
+	ld a, [hli] ; Read bank
+	and a
+	jr z, :+
+	ldh [hChunkGfxBank], a
+	inc c
+	ld a, [hli] ; Size
+	ldh [c], a
+	inc c
+	ld a, [hli] ; LOW(ptr)
+	ldh [c], a
+	inc c
+	ld a, [hli] ; HIGH(ptr)
+	ldh [c], a
+	dec c ; Skip HIGH(ptr)
+	dec c ; Sjip LOW(ptr)
+	dec c ; Skip size
+	ldh a, [hChunkGfxBank]
+	ldh [c], a ; Wite bank last, as it's what actually schedules the entry
+:
+	ld l, e ; Switch to second chunk
+	assert LOW(hChunkGfxPtrs.topLeft) ^ LOW(hChunkGfxPtrs.topRight) == $08
+	assert LOW(hChunkGfxPtrs.bottomLeft) ^ LOW(hChunkGfxPtrs.bottomRight) == $08
+	ld a, c
+	xor $08
+	ld c, a
+	cp b ; Check if we came back to the original write pointer
+	jr nz, .loadHorizChunkStrip
+.noVertChunkLoading
+
+	;; Alright, now we can draw the new row!
+	; Begin by computing the row's target position (in pixels)
+	ld hl, wCameraYPos
+	ld a, [hli]
+	ld h, [hl] ; Save camera position for later
+	ld l, a
+	bit 0, d ; bit 7, d ; Above computation moved sign bit (bit 7) to bit 0
 	jr nz, .movedUpwards
 	ld bc, SCRN_Y * SUBPX_PER_PX
 	add hl, bc
@@ -282,11 +409,11 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	xor h
 	ld c, a
 	ldh [hChunkPtrLow], a
-	ld a, [wMapPtrHigh]
-	ld b, a
 	ld a, [wMapBank]
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
+	ld a, [wMapPtrHigh]
+	ld b, a
 	; Read the chunk's ptr and bank...
 	ld a, [bc] ; Chunk ptr high
 	ld l, a

@@ -133,6 +133,8 @@ VBlankHandler:
 	ldh a, [hOBP1]
 	ldh [rOBP1], a
 
+	ldh a, [rVBK]
+	ldh [hVBK], a
 	ldh a, [hVRAMTransferDestHigh]
 	and a
 	jr z, .noVRAMTransfer
@@ -145,8 +147,6 @@ VBlankHandler:
 	ldh [rHDMA4], a
 	ldh a, [hVRAMTransferSrcBank]
 	ld [rROMB0], a
-	ldh a, [rVBK]
-	ldh [hVBK], a
 	ldh a, [hVRAMTransferDestBank]
 	ldh [rVBK], a
 	ldh a, [hVRAMTransferLen]
@@ -154,12 +154,88 @@ VBlankHandler:
 	; Restore ROM and VRAM banks
 	ldh a, [hCurROMBank]
 	ld [rROMB0], a
-	ldh a, [hVBK]
-	ldh [rVBK], a
 	; ACK the transfer
 	xor a
 	ldh [hVRAMTransferDestHigh], a
 .noVRAMTransfer
+
+	; Load requested chunk gfx
+	push bc
+	ld c, LOW(hChunkGfxPtrs)
+.loadChunkGfx
+	ldh a, [c] ; Load bank
+	inc c ; Skip bank
+	and a
+	jr z, .noChunkGfx
+	ld [rROMB0], a
+	; Check if we'll have enough time to perform the GDMA
+	; It's possible to load 14.25 tiles per scanline (456 dots/scanline / 32 dots/tile),
+	; so we'll be conservative (including to account for setup / teardown) and assume 13.
+	ldh a, [rLY]
+	and a
+	jr z, .tooLateForChunkGfx ; If scanline 0 started, we're too late to load anything
+	; A = $9A - A
+	cpl
+	add a, $9A + 1
+	; Multiply by 13... (since input is at most 10, this won't overflow)
+	ld b, a
+	swap a ; * 16
+	sub b ; * 15
+	sub b ; * 14
+	sub b ; * 13
+	ld b, a ; B = max amount of tiles we can load
+	ldh a, [c] ; Load size
+	inc c ; Skip size
+	cp b ; If requested >= max (to account for HDMA5 being 1 smaller than real), give up
+	jr nc, .cantLoadChunkGfx
+	ld b, a ; Save for writing to HDMA5
+	ldh a, [c] ; Read LOW(src ptr)
+	ldh [rHDMA2], a
+	inc c ; Skip LOW(src ptr)
+	ldh a, [c] ; Read HIGH(src ptr)
+	ldh [rHDMA1], a
+	assert LOW(hChunkGfxPtrs.topLeft) & $04 == 0
+	assert LOW(hChunkGfxPtrs.topRight) & $04 == 0
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $04 == 4
+	assert LOW(hChunkGfxPtrs.bottomRight) & $04 == 4
+	ld a, c
+	and $14 ; We load at $9[04]00, not $8[04]00; rely on bit 4 being always set!
+	assert LOW(hChunkGfxPtrs) & $10 == $10
+	ldh [rHDMA3], a
+	assert LOW(hChunkGfxPtrs.topLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.topRight) & $08 == 8
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.bottomRight) & $08 == 8
+	ld a, c ; Get bit 3 into bit 1
+	rra
+	rra
+	rra
+	ldh [rVBK], a
+	xor a
+	ldh [rHDMA4], a
+	ld a, b
+	ldh [rHDMA5], a
+	ldh a, [hCurROMBank]
+	ld [rROMB0], a
+	dec c ; Skip HIGH(src ptr)
+	dec c ; Skip LOW(src ptr)
+	dec c ; Skip size
+	xor a
+	ldh [c], a ; Reset bank, to mark gfx as loaded
+	inc c ; Skip bank
+.noChunkGfx
+	inc c ; Skip size
+.cantLoadChunkGfx
+	inc c ; Skip LOW(src ptr)
+	inc c ; Skip HIGH(src ptr)
+	assert LOW(hChunkGfxPtrs) & $1F == $10
+	bit 4, c
+	jr nz, .loadChunkGfx
+.tooLateForChunkGfx
+	pop bc
+
+	ldh a, [hVBK]
+	ldh [rVBK], a
 
 	; OAM DMA can occur late in the handler, because it will still work even
 	; outside of VBlank. Sprites just will not appear on the scanline(s)
@@ -243,6 +319,28 @@ ENDR
 	and a
 	jr z, .dontReset
 	jp Reset
+
+
+; This alignment guarantees both that it's possible to go between pointers by simple `inc l`,
+; and that the "current chunk" is easily determined by looking at two bits in the pointer
+; An alignment of 4 would be sufficient, but 5 guarantees that bit 4 is clear for the entire buffer... until its end.
+SECTION "Chunk gfx loading ptrs", HRAM,ALIGN[5,$10]
+
+hChunkGfxPtrs::
+; Format:
+;  - ROM bank (if non-zero, will be considered for loading)
+;  - LE pointer
+;  - Size (in HDMA5 format)
+.topLeft::
+	ds 4
+.bottomLeft::
+	ds 4
+.topRight::
+	ds 4
+.bottomRight::
+	ds 4
+.end
+
 
 SECTION "VBlank HRAM", HRAM
 

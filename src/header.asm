@@ -63,6 +63,10 @@ Reset::
 	ldh [hOAMHigh], a
 	ldh [hCanSoftReset], a
 	ldh [hVRAMTransferDestHigh], a
+	ldh [hChunkGfxPtrs.topLeft], a
+	ldh [hChunkGfxPtrs.topRight], a
+	ldh [hChunkGfxPtrs.bottomLeft], a
+	ldh [hChunkGfxPtrs.bottomRight], a
 	dec a ; ld a, $FF
 	ldh [hHeldKeys], a
 
