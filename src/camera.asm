@@ -475,7 +475,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	dec a ; Check if low byte is 1...
 	or [hl]
 	; Load 2 variables for the loops below
-	lb hl, HIGH(wBGPaletteIDs), LOW(wBGPaletteIDs) - 1
+	ld hl, wBGPaletteIDs
 	; Having Z here implies `(a - 1) | [hl] == 0`
 	; ⇔ `a - 1 == 0` && `[hl] == 0`
 	; ⇔ `a == 1` && `[hl] == 0`, and since A holds the counter's low byte & [HL] its high byte,
@@ -488,6 +488,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 .alreadyLoaded
 	; Find the slot the palette is referenced in
 	ld a, c ; Get ID * 2 in A for comparing
+	db $FE ; cp imm8 ; Skip incrementing L on first iteration
 .seekPalette
 	inc l ; Go to next palette
 	cp [hl]
@@ -575,6 +576,20 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	;    wasting 1 cycle per iteration (= 21 cycles total). This means that we're still
 	;    winning cycles overall as long as no more than 2 palettes are loaded per loop,
 	;    which is reasonable.
+
+	; To avoid loading the same palette in two separate hardware slots (which would make them both
+	; used), walk the table once, checking if the palette is already loaded.
+	; And only if it isn't, seek a free slot.
+	ld b, l ; Save iteration ptr for second loop
+.checkIfAlreadyLoaded
+	ld a, [hl]
+	cp c ; If the palette is still loaded, no need to re-load it
+	ret z ; It's already loaded, no need to write it
+	inc l ; Go to next slot
+	bit 3, l
+	jr z, .checkIfAlreadyLoaded
+	ld l, b ; Reload iteration ptr
+	dec l ; Compensate for the increment below
 .lookupFreeSlot
 	inc l ; Go to next slot
 	; Assert that the selected slot is actually valid (below 8); this does incur a small overhead,
@@ -582,8 +597,6 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	bit 3, l
 	error nz
 	ld a, [hl]
-	cp c ; If the palette is still loaded, no need to re-load it
-	ret z ; It's already loaded, no need to write it
 	srl a ; Shift bit 0 (indicating special status) into carry
 	jr c, .checkFreeSlot ; If bit 0 is set, the slot is acceptable if it contains $01 ⇔ C and Z set
 	; Otherwise, check if the palette in question is referenced (otherwise, the slot is free)
