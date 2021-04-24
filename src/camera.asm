@@ -4,6 +4,9 @@ INCLUDE "defines.asm"
 MAX_CAM_SPEED equ 8 * SUBPX_PER_PX
 	EXPORT MAX_CAM_SPEED
 
+VIEWPORT_HEIGHT_B equ SCRN_Y_B + 1
+VIEWPORT_WIDTH_B equ SCRN_X_B + 1
+
 
 SECTION "Camera movement funcs", ROMX
 
@@ -38,6 +41,7 @@ MoveCamera::
 	xor a
 	ld [wBGPaletteMask], a
 	ld [wFadeDelta], a ; Do not alter the fade
+
 
 	; See by how much the camera would need to move to reach the target Y position
 	; We'll compute (target.y - cur.y)
@@ -125,7 +129,7 @@ MoveCamera::
 	ld bc, -8 * SUBPX_PER_PX
 	bit 7, d
 	jr z, .movedDownwards
-	ld bc, 19 * 8 * SUBPX_PER_PX
+	ld bc, VIEWPORT_HEIGHT_B * 8 * SUBPX_PER_PX
 .movedDownwards
 	add hl, bc
 	PUSHS
@@ -204,7 +208,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	xor $40
 	ldh [hMetatileOfs], a
 	; If we just wrote the right half (= we're about to write the left half), go to the next metatile
-	add a, a ; Discard bit 7
+	add a, a ; Discard bit 7 (only bit 6 is reamining)
 	jr nz, .unloadedLeftTile
 	inc c
 	; Check if we need to go to the next chunk
@@ -268,10 +272,9 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 :
 	add a, 16 ; When moving downwards, go down one row
 	ld l, a
-	; If the camera is "leaning" towards the left half of the chunk, go one chunk to the right
+	; If the camera is "leaning" towards the left half of the chunk, go one chunk to the left
 	; Fortunately, the "middle X position", in pixels, is $30, so we can just check the high
 	; byte of the camera's X position.
-	add a, a
 	ld a, e ; Get HIGH(camera's X position)
 	and $0F ; Only keep the (meta-)tile position
 	sub 3
@@ -553,7 +556,458 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 .noRowRedraw
 
 
-	; TODO: horiz movement
+	; Most of the code here is similar, if not identical to vertical movement code, so use it as a
+	; reference if you're lost and there are no comments
+	; I'm assuming you already read the vertical movement piece anyway
+
+
+	ld a, [wCameraXPos]
+	ld l, a
+	ld a, [wCameraXPos + 1]
+	ld h, a
+	ld a, [wCameraTargetXPos]
+	sub l
+	ld e, a
+	ld a, [wCameraTargetXPos + 1]
+	sbc h
+	ld d, a
+	assert MAX_CAM_SPEED == $80, "The clamping below relies on max cam speed == $80"
+	ld a, e
+	add a, a ; Get bit 7 into carry
+	sbc a, a ; Yield $00 if bit 7 was clear, or $FF if it was set
+	cp d ; Check if that matches the high byte
+	jr z, .noHorizClamp
+	assert LOW(MAX_CAM_SPEED) == LOW(-MAX_CAM_SPEED)
+	ld e, MAX_CAM_SPEED
+	sla d
+	sbc a, a
+	ld d, a
+.noHorizClamp
+
+	ld c, l
+	add hl, de
+	ld a, h
+	ld [wCameraXPos + 1], a
+	ld a, l
+	ld [wCameraXPos], a
+
+	; ld a, l ; A == L right now
+	xor c
+	add a, a
+	jp nc, .noColumnRedraw
+
+	; First, we'll unload the column that's just went off-screen
+	ld bc, -8 * SUBPX_PER_PX
+	bit 7, d
+	jr z, .movedRightwards
+	ld bc, VIEWPORT_WIDTH_B * 8 * SUBPX_PER_PX
+.movedRightwards
+	add hl, bc
+	ld a, [wCameraYPos]
+	and $80 ; %V000 0000
+	rlca    ; %0000 000V
+	xor l
+	and LOW(~$80)
+	xor l   ; %H000 000V
+	rrca    ; %VH00 0000
+	ldh [hMetatileOfs], a
+	; Compute the chunk position...
+	ld a, [wCameraYPos + 1]
+	swap h
+	xor h ; Cam X high
+	and $F0
+	xor h
+	ld c, a
+	ldh [hChunkPtrLow], a
+	ld a, [wMapPtrHigh]
+	ld b, a
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	; Read the chunk's ptr and bank...
+	ld a, [bc] ; Chunk ptr high
+	ld e, a
+	inc b ; Switch to bank table
+	ld a, [bc] ; Chunk bank
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld b, e ; Load metatilemap ptr high
+	; Compute metatilemap ptr low
+	ld a, [wCameraYPos + 1]
+	xor h
+	and $0F
+	xor h
+	swap a
+	ld c, a
+
+	; Now, run through the column
+	ld e, SCRN_Y_B + 1
+.unloadColumn
+	; Read the metatile ID
+	ld a, [bc]
+	ld l, a ; Save low byte for later
+	and $30 ; Keep upper 2 bits
+	swap a ; Multiply it by 16, the size of a metatile definition
+	add a, b ; Add to the high byte of the base ptr
+	inc a ; The metatile definitions are located 256 bytes after the metatilemap
+	ld h, a
+	ldh a, [hMetatileOfs]
+	or l
+	swap a ; Multiply by 16 (again)
+	and $FC ; Only keep the relevant bits
+	ld l, a
+	; Read the palette ID
+	ld l, [hl]
+	sla l ; Double it, since counts are 2-byte
+	; Decrement its count
+	ld h, HIGH(wBGPaletteCounts)
+	ld a, [hl]
+	dec a
+	ld [hli], a
+	inc a ; cp $FF
+	jr nz, :+
+	dec [hl]
+:
+	; Toggle between the top and bottom half of the metatile
+	ldh a, [hMetatileOfs]
+	xor $80
+	ldh [hMetatileOfs], a
+	; If we just wrote the bottom half (= we're about to write the top half), go to the next metatile
+	add a, a ; Shift out bit 7
+	jr c, .unloadedTopTile
+	ld a, c
+	add a, 16 ; Note that this will automatically wrap within the chunk's map
+	ld c, a
+	; Check if we need to go to the next chunk
+	and $F0 ; Get the Y coord
+	jr nz, .unloadedTopTile
+	ldh a, [hChunkPtrLow]
+	add a, 16 ; Go to the next chunk
+	ld l, a
+	ld a, [wMapPtrHigh]
+	ld h, a
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	; Read the chunk's ptr and bank...
+	ld b, [hl] ; Chunk ptr high
+	inc h ; Switch to bank table
+	ld a, [hl] ; Chunk bank
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+.unloadedTopTile
+	dec e
+	jr nz, .unloadColumn
+
+	ld hl, wCameraXPos
+	ld a, [hli]
+	ld h, [hl] ; Save camera position for later
+	ld l, a
+	add a, a ; Shift tile position bit into carry
+	ld a, h
+	rla ; Rotate tile position bit in
+	and $1F ; Get tile position within chunk
+	rlc d ; Make sure to preserve direction bit in bit 0 for below!
+	; The target tile position is 5 when moving upwards, and 6 when moving downwards
+	ccf ; Have carry set iff moving downwards
+	sbc a, 5
+	jr nz, .noHorizChunkLoading
+	; Schedule loading the two new chunks' gfx
+	; Compute the current chunk's position in the map, and offset it
+	ld a, [wCameraYPos + 1]
+	ld e, a
+	ld a, h
+	swap a
+	xor e
+	and $0F
+	xor e
+	bit 0, d ; Check movement direction
+	jr z, :+
+	sub 2 ; When moving leftwards, go left one column (and another one to compensate for below)
+:
+	inc a ; When moving rightwards, go right one column
+	ld l, a
+	; If the camera is "leaning" towards the top half of the chunk, go one chunk up
+	add a, a
+	ld a, e ; Get HIGH(camera's Y position)
+	rla ; Pick up the MSB of LOW(cam's Y pos)
+	and $1F ; Only keep the (meta-)tile position
+	sub $38 /* Account for left shift */ << 1 /* Account for subpixel shift */ >> 4
+	add a, a ; Check sign bit
+	jr nc, .leaningDown
+	ld a, l
+	sub 16
+	ld l, a
+.leaningDown
+	; Now, we need to determine which of the 4 slots the (top) chunk will be loaded into
+	ld c, LOW(hChunkGfxPtrs)
+	bit 0, l ; Odd X position?
+	jr z, :+
+	assert LOW(hChunkGfxPtrs.topLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $08 == 0
+	assert LOW(hChunkGfxPtrs.topRight) & $08 == $08
+	assert LOW(hChunkGfxPtrs.bottomRight) & $08 == $08
+	set 3, c
+:
+	bit 4, l ; Odd Y position?
+	jr z, :+
+	assert LOW(hChunkGfxPtrs.topLeft) & $04 == 0
+	assert LOW(hChunkGfxPtrs.bottomLeft) & $04 == $04
+	assert LOW(hChunkGfxPtrs.topRight) & $04 == 0
+	assert LOW(hChunkGfxPtrs.bottomRight) & $04 == $04
+	set 2, c
+:
+	ld a, l ; Save the other chunk's position
+	add a, 16
+	ld e, a
+	ld b, c ; Save original write ptr low, for loop termination
+.loadVertChunkStrip
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld a, [wMapPtrHigh]
+	ld h, a
+	inc h ; Switch to bank map
+	ld a, [hl]
+	dec h ; Switch to HIGH(ptr) map
+	ld h, [hl] ; Read HIGH(chunk ptr)
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	; Read tables size
+	dec h
+	ld l, -2
+	ld a, [hli] ; Read high byte of post-metatile offset
+	ld l, [hl] ; Read low byte of post-metatile offset (added to an ALIGN[8] address, so...)
+	add a, h
+	ld h, a
+	ld a, [hli] ; Read bank
+	and a
+	jr z, :+
+	ldh [hChunkGfxBank], a
+	inc c
+	ld a, [hli] ; Size
+	ldh [c], a
+	inc c
+	ld a, [hli] ; LOW(ptr)
+	ldh [c], a
+	inc c
+	ld a, [hli] ; HIGH(ptr)
+	ldh [c], a
+	dec c ; Skip HIGH(ptr)
+	dec c ; Sjip LOW(ptr)
+	dec c ; Skip size
+	ldh a, [hChunkGfxBank]
+	ldh [c], a ; Wite bank last, as it's what actually schedules the entry
+:
+	ld l, e ; Switch to second chunk
+	assert LOW(hChunkGfxPtrs.topLeft) ^ LOW(hChunkGfxPtrs.bottomLeft) == $04
+	assert LOW(hChunkGfxPtrs.topRight) ^ LOW(hChunkGfxPtrs.bottomRight) == $04
+	ld a, c
+	xor $04
+	ld c, a
+	cp b ; Check if we came back to the original write pointer
+	jr nz, .loadVertChunkStrip
+.noHorizChunkLoading
+
+	;; Alright, now we can draw the new column!
+	; Begin by computing the column's target position (in pixels)
+	ld hl, wCameraXPos
+	ld a, [hli]
+	ld h, [hl] ; Save camera position for later
+	ld l, a
+	bit 0, d ; bit 7, d ; Above computation moved sign bit (bit 7) to bit 0
+	jr nz, .movedLeftwards
+	ld bc, SCRN_X * SUBPX_PER_PX
+	add hl, bc
+.movedLeftwards
+
+	; Compute VRAM dest addr
+	; Positions can be thought of like this:
+	; cccc mmmm  tppp ssss
+	; |||| ||||  |||| ++++- Subpixels
+	; |||| ||||  |+++------ Pixels
+	; |||| ||||  +--------- Tile (within metatile)
+	; |||| ++++------------ Metatile
+	; ++++----------------- Chunk
+	; For VRAM positions, we care about the metatile+tile position, which are on two separate bytes
+	; However, only the topmost bit of the lower byte is needed, so we can just transfer it via carry
+	ld a, [wCameraYPos] ; Similar trick
+	add a, a
+	ld a, [wCameraYPos + 1]
+	rla ; Shift in that bit
+	rrca ; Rotate bits in place for "merging"
+	rrca
+	rrca
+	ld d, a ; Store for merging
+	ld a, l
+	add a, a
+	ld a, h
+	rla
+	xor d
+	and $1F ; Keep $1F from A, $E0 from D
+	xor d
+	ld e, a
+	ld a, d
+	and $03 ; Only keep relevant bits
+	or HIGH(_SCRN0)
+	ld d, a
+
+	; Compute chunk src addr
+	; TODO: factor out into a function (same-ish snippet above unload loop)
+	ld a, [wCameraYPos + 1]
+	swap h ; Get chunk bits in the right spot
+	xor h ; Cam X high
+	and $F0
+	xor h
+	ld c, a
+	ldh [hChunkPtrLow], a
+	ld a, [wMapBank]
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld a, [wMapPtrHigh]
+	ld b, a
+	; Read the chunk's ptr and bank...
+	ld a, [bc] ; Chunk ptr high
+	ld l, a
+	inc b ; Switch to bank table
+	ld a, [bc] ; Chunk bank
+	ldh [hCurROMBank], a
+	ld [rROMB0], a
+	ld b, l ; Load metatilemap ptr high
+	; Compute metatilemap ptr low
+	ld a, [wCameraYPos + 1]
+	xor h
+	and $0F
+	xor h
+	swap a
+	ld c, a
+
+	; And now, the loop proper!
+	ld a, SCRN_Y_B + 1
+.drawColumn
+	ldh [hNbTilesToDraw], a
+	ld a, [bc] ; Read target metatile within chunk
+	push bc ; Save metatile read ptr
+	; TODO: if metatile is dynamic, deref the array
+
+	swap a ; Multiply metatile ID by 16 (size of a metatile entry)
+	ld l, a ; Save low byte for later
+	and $03 ; Keep upper 2 bits
+	add a, b ; Add them to high byte of base ptr (low byte is computed from 0 so can't overflow)
+	ld h, a
+	inc h ; Switch to metatile def array
+	ld a, l
+	and $F0 ; Keep lower 4 bits of metatile ID
+	bit 5, e ; If on an odd row, use entry #2 or #3
+	jr z, .writeEvenRow2
+	add a, 8
+.writeEvenRow2
+	bit 0, e ; If on an odd column, use entry #1 or #3
+	jr z, .writeEvenColumn2
+	add a, 4
+.writeEvenColumn2
+	ld l, a
+
+	ld a, [hli] ; Read palette ID
+	; Ref palette, possibly load it, and translate it to the corresponding hardware palette
+	push hl
+	; First, increase that palette's ref count
+	add a, a
+	assert LOW(wBGPaletteCounts) == 0
+	ld l, a
+	ld h, HIGH(wBGPaletteCounts)
+	ld c, l ; Keep the palette ID (times 2) for comparing
+	ld a, [hl]
+	inc a
+	ld [hli], a
+	jr nz, :+
+	inc [hl] ; Apply carry
+:
+	; Check if we just increased the ref count to 1
+	dec a ; Check if low byte is 1...
+	or [hl]
+	; Load 2 variables for the loops below
+	ld hl, wBGPaletteIDs
+	; Having Z here implies `(a - 1) | [hl] == 0`
+	; ⇔ `a - 1 == 0` && `[hl] == 0`
+	; ⇔ `a == 1` && `[hl] == 0`, and since A holds the counter's low byte & [HL] its high byte,
+	; ⇔ counter == 1, which is what we want! :)
+	jr nz, .alreadyLoaded2
+	; Palette just became referenced, so find a free hardware slot to load into
+	call .loadPalette
+	jr .gotPaletteSlot2 ; Still make the most likely path the fastest
+	; ---------------------------
+.alreadyLoaded2
+	; Find the slot the palette is referenced in
+	ld a, c ; Get ID * 2 in A for comparing
+	db $FE ; cp imm8 ; Skip incrementing L on first iteration
+.seekPalette2
+	inc l ; Go to next palette
+	cp [hl]
+	jr nz, .seekPalette2 ; We expect this loop to terminate, as reaching this loop means the palette is loaded
+	; FIXME: maybe check that the slot is valid... but that may incur a certain runtime cost
+.gotPaletteSlot2
+	assert LOW(wBGPaletteIDs) == 0
+
+	; Incorporate the chunk's bank bit into the attrs
+	ldh a, [hChunkPtrLow]
+	ld c, a
+	rra
+	sbc a, a
+	and OAMF_BANK1
+	or l
+	ld b, a
+	pop hl ; Get back metatile entry read ptr
+
+	xor a
+	ldh [rVBK], a
+:
+	ldh a, [rSTAT]
+	and STATF_BUSY
+	jr nz, :- ; From that point on, we have 32 cycles to write to VRAM
+	ld a, [hli] ; Read tile ID
+	bit 7, a ; Check if tile is in "common" block
+	jr nz, .commonTile2 ; If so, no translation needs to be performed
+	; Tile may either be in block 0/1 (even chunk row, no offset) or block 2/3 (odd chunk row, set bit 6)
+	bit 4, c
+	jr z, .evenChunkY2
+	or $40
+	db $DC ; call c, imm16 (skip next 2-byte instruction)
+.commonTile2
+	set OAMB_BANK1, b ; Force VRA1 if using a "common" tile
+.evenChunkY2
+	ld [de], a ;; *** VRAM WRITE ***
+
+	; Write attribute
+	ld a, 1
+	ldh [rVBK], a
+	ld a, [hli]
+	xor b
+	and $E0 ; We need to ignore the attr's bits 0-4
+	xor b
+	ld [de], a ;; *** VRAM WRITE ***
+
+	pop bc ; Get back metatile read ptr
+	ld a, e ; Go to next tile row
+	add a, SCRN_VX_B
+	ld e, a
+	adc a, d
+	sub e
+	ld d, a
+	; If we just wrote a metatile's bottommost tile, switch to the next one
+	bit 5, e
+	jr nz, .wroteUpperTile
+	ld a, c
+	add a, 16
+	ld c, a
+	; Check for and handle wrapping
+	call c, .wrapVert
+.wroteUpperTile
+
+	ldh a, [hNbTilesToDraw]
+	dec a
+	jr nz, .drawColumn
+.noColumnRedraw
 
 
 	; Now, if any palettes need to be committed, do so
@@ -585,7 +1039,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	ld a, [hl]
 	cp c ; If the palette is still loaded, no need to re-load it
 	ret z ; It's already loaded, no need to write it
-	inc l ; Go to next slot
+	inc l
 	bit 3, l
 	jr z, .checkIfAlreadyLoaded
 	ld l, b ; Reload iteration ptr
@@ -701,9 +1155,24 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	ret
 
 
+.wrapVert
+	ld d, HIGH(_SCRN0)
+	ldh a, [hChunkPtrLow]
+	add a, 16 ; Go to next chunk
+	jr .wrap
+
 .wrapHoriz
+	; Wrap metatile read ptr
+	ld a, c
+	sub 16
+	ld c, a
+	; Wrap metatile write ptr
+	ld a, e
+	sub SCRN_VX_B
+	ld e, a
 	ldh a, [hChunkPtrLow]
 	inc a ; Go to next chunk
+.wrap ; Code common to both vertical and horizontal wrapping
 	ldh [hChunkPtrLow], a
 	ld l, a
 	ld a, [wMapPtrHigh]
@@ -717,10 +1186,6 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	ld a, [hl] ; Chunk bank
 	ldh [hCurROMBank], a
 	ld [rROMB0], a
-	; Wrap metatile read ptr
-	ld a, c
-	sub 16
-	ld c, a
 	ret
 
 
