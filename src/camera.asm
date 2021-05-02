@@ -731,6 +731,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	inc a ; When moving rightwards, go right one column
 	ld l, a
 	; If the camera is "leaning" towards the top half of the chunk, go one chunk up
+	ld a, [wCameraYPos]
 	add a, a
 	ld a, e ; Get HIGH(camera's Y position)
 	rla ; Pick up the MSB of LOW(cam's Y pos)
