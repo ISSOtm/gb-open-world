@@ -336,6 +336,9 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	and a
 	jr z, :+
 	ldh [hChunkGfxBank], a
+	; Clear the bank so that the VBlank handler will not consider our entry until it's fully written
+	xor a
+	ldh [c], a
 	inc c
 	ld a, [hli] ; Size
 	ldh [c], a
@@ -349,7 +352,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	dec c ; Sjip LOW(ptr)
 	dec c ; Skip size
 	ldh a, [hChunkGfxBank]
-	ldh [c], a ; Wite bank last, as it's what actually schedules the entry
+	ldh [c], a ; Write bank last, as it's what actually schedules the entry
 :
 	ld l, e ; Switch to second chunk
 	assert LOW(hChunkGfxPtrs.topLeft) ^ LOW(hChunkGfxPtrs.topRight) == $08
@@ -784,6 +787,9 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	and a
 	jr z, :+
 	ldh [hChunkGfxBank], a
+	; Clear the bank so that the VBlank handler will not consider our entry until it's fully written
+	xor a
+	ldh [c], a
 	inc c
 	ld a, [hli] ; Size
 	ldh [c], a
@@ -797,7 +803,7 @@ hNbTilesToDraw: db ; Amount of tiles remaining to be drawn
 	dec c ; Sjip LOW(ptr)
 	dec c ; Skip size
 	ldh a, [hChunkGfxBank]
-	ldh [c], a ; Wite bank last, as it's what actually schedules the entry
+	ldh [c], a ; Write bank last, as it's what actually schedules the entry
 :
 	ld l, e ; Switch to second chunk
 	assert LOW(hChunkGfxPtrs.topLeft) ^ LOW(hChunkGfxPtrs.bottomLeft) == $04
