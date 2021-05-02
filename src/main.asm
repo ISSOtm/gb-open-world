@@ -59,15 +59,14 @@ MainLoop:
 	ld [rROMB0], a
 	call JumpToPtr
 	ld hl, wCurState
-	set 7, [hl]
+	ld a, [hl]
+	set 7, a
+	ld [hl], a
+	add a, a
 .noStateInit
 
 
 	;; Process state's "update" function
-	ld a, [wCurState]
-	assert NB_STATES <= 128
-	add a, a
-	assert LOW(StatePtrs) == 0
 	ld l, a
 	ld h, HIGH(StatePtrs)
 	ld a, BANK(StatePtrs)
