@@ -119,6 +119,17 @@ MainLoop:
 	ldh [hSCX], a
 
 
+	;; Tick map timers
+	ld hl, wMapTimers
+.tickMapTimers
+	dec [hl]
+	jr nz, :+
+	ld [hl], l
+:
+	inc l
+	jr nz, .tickMapTimers
+
+
 	;; Wait for next frame
 	rst WaitVBlank
 
@@ -150,6 +161,13 @@ MACRO register_state
 	SECTION "\1 state", ROM0
 ENDM
 ; State definitions are at the end of this file
+
+
+
+SECTION "Map timers", WRAM0,ALIGN[8]
+
+wMapTimers:
+	ds 256
 
 
 

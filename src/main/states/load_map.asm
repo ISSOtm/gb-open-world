@@ -46,6 +46,14 @@ LoadMapStateUpdate:
 	; TODO: compute the fade step count instead of hardcoding like this
 	ld a, $7F
 	ld [wFadeSteps], a
+
+
+	;; Init map timers
+	ld hl, wMapTimers
+.initMapTimers
+	ld [hl], l
+	inc l
+	jr nz, .initMapTimers
 	ret
 
 
