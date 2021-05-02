@@ -324,7 +324,7 @@ hRowDrawCnt: db ; How many tiles left to draw in this row
 :
 	ldh a, [rSTAT]
 	and STATF_BUSY
-	jr nz, :- ; From that point on, we have 32 cycles to write to VRAM
+	jr nz, :- ; From that point on, we have 36 cycles to write to VRAM
 	ld a, [hli] ; Read tile ID
 	bit 7, a ; Check if tile is in "common" block
 	jr nz, .commonTile ; If so, no translation needs to be performed
