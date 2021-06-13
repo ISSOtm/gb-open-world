@@ -163,9 +163,9 @@ wShadowOAM::
 	ds NB_SPRITES * 4
 
 
-; This ensures that the stack is at the very end of WRAM
-SECTION "Stack", WRAM0[$E000 - STACK_SIZE]
+SECTION "Stack", WRAM0
 
+wStack:
 	ds STACK_SIZE
 wStackBottom:
 
