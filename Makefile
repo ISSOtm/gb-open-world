@@ -79,7 +79,7 @@ mostlyclean:
 
 # `clean`: Clean absolutely everything
 clean: mostlyclean
-	env -C src/tools/map_converter cargo clean
+	+env -C src/tools/map_converter cargo clean
 .PHONY: clean
 
 # `rebuild`: Build everything from scratch
@@ -181,7 +181,7 @@ res/maps.asm: $(patsubst %,res/maps/%/map.asm,$(MAP_LIST))
 MAP_CONVERTER := src/tools/map_converter/target/release/map_converter
 
 $(MAP_CONVERTER): $(wildcard src/tools/map_converter/src/*.rs) src/tools/map_converter/Cargo.toml
-	env -C src/tools/map_converter cargo build --release
+	+env -C src/tools/map_converter cargo build --release
 
 res/maps/%/map.asm: res/maps/%/tileset.png $(MAP_CONVERTER) src/res/maps/%/map.tmx res/maps/%/tileset.pal.json res/maps/%/tileset.2bpp res/maps/%/tileset.map res/maps/%/tileset.palmap
 	@$(MKDIR_P) $(@D)
